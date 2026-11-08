@@ -2,6 +2,78 @@ const MAX_AUDIO_UPLOAD_BYTES = 85 * 1024 * 1024;
 const MAX_COVER_BYTES = 5 * 1024 * 1024;
 const ALLOWED_COVER_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
 const ALLOWED_GENRES = new Set(["ฟังสบาย", "อินดี้ป๊อป", "อะคูสติก", "รีมิกซ์", "เอฟเฟ็กต์เสียง", "เพลง Set", "อื่น ๆ"]);
+const ID3_SCAN_BYTES = 8 * 1024 * 1024;
+
+function extractId3Cover(bytes) {
+  if (bytes.length < 10 || String.fromCharCode(...bytes.subarray(0, 3)) !== "ID3") return null;
+  const version = bytes[3];
+  if (version < 2 || version > 4) return null;
+  const tagSize = (bytes[6] << 21) | (bytes[7] << 14) | (bytes[8] << 7) | bytes[9];
+  const end = Math.min(10 + tagSize, bytes.length);
+  let offset = 10;
+  if (bytes[5] & 0x40) {
+    if (version === 3) offset += 4 + ((bytes[offset] << 24) | (bytes[offset + 1] << 16) | (bytes[offset + 2] << 8) | bytes[offset + 3]);
+    else if (version === 4) offset += (bytes[offset] << 21) | (bytes[offset + 1] << 14) | (bytes[offset + 2] << 7) | bytes[offset + 3];
+  }
+  const decoder = new TextDecoder("latin1");
+  while (offset + 10 <= end) {
+    const frameId = String.fromCharCode(...bytes.subarray(offset, offset + 4));
+    if (!/^[A-Z0-9]{4}$/.test(frameId)) break;
+    const frameSize = version === 4
+      ? (bytes[offset + 4] << 21) | (bytes[offset + 5] << 14) | (bytes[offset + 6] << 7) | bytes[offset + 7]
+      : (bytes[offset + 4] * 0x1000000) + (bytes[offset + 5] << 16) + (bytes[offset + 6] << 8) + bytes[offset + 7];
+    if (!frameSize || offset + 10 + frameSize > end) break;
+    const start = offset + 10, frameEnd = start + frameSize;
+    if (frameId === "APIC") {
+      const encoding = bytes[start];
+      let cursor = start + 1, mimeEnd = cursor;
+      while (mimeEnd < frameEnd && bytes[mimeEnd] !== 0) mimeEnd++;
+      const rawMime = decoder.decode(bytes.subarray(cursor, mimeEnd)).toLowerCase();
+      cursor = mimeEnd + 1 + 1;
+      const wide = encoding === 1 || encoding === 2;
+      while (cursor < frameEnd - 1) {
+        if (wide ? bytes[cursor] === 0 && bytes[cursor + 1] === 0 : bytes[cursor] === 0) {
+          cursor += wide ? 2 : 1;
+          break;
+        }
+        cursor += wide ? 2 : 1;
+      }
+      const image = bytes.slice(cursor, frameEnd);
+      const type = rawMime.includes("png") ? "image/png" : rawMime.includes("webp") ? "image/webp" : rawMime.includes("jpeg") || rawMime.includes("jpg") ? "image/jpeg" : "";
+      if (type && image.length > 0 && image.length <= MAX_COVER_BYTES) return { type, image };
+    }
+    offset = frameEnd;
+  }
+  return null;
+}
+
+async function extractTrackCover(env, objectKey) {
+  const object = await env.AUDIO.get(objectKey, { range: { offset: 0, length: ID3_SCAN_BYTES } });
+  if (!object) return null;
+  const bytes = new Uint8Array(await object.arrayBuffer());
+  return extractId3Cover(bytes);
+}
+
+async function backfillEmbeddedCovers(env) {
+  const { results } = await env.DB.prepare(
+    "SELECT id, object_key FROM tracks WHERE cover_checked = 0 AND cover_content_type = '' AND content_type IN ('audio/mpeg', 'audio/mp3') ORDER BY created_at DESC LIMIT 4",
+  ).all();
+  for (const track of results) {
+    try {
+      const cover = await extractTrackCover(env, track.object_key);
+      if (cover) {
+        const key = `covers/${track.id}`;
+        await env.AUDIO.put(key, cover.image, { httpMetadata: { contentType: cover.type }, customMetadata: { trackId: track.id, purpose: "cover" } });
+        await env.DB.prepare("UPDATE tracks SET cover_key = ?, cover_content_type = ?, cover_checked = 1 WHERE id = ?")
+          .bind(key, cover.type, track.id).run();
+      } else {
+        await env.DB.prepare("UPDATE tracks SET cover_checked = 1 WHERE id = ?").bind(track.id).run();
+      }
+    } catch (error) {
+      console.error("embedded_cover_backfill_failed", { id: track.id, message: String(error) });
+    }
+  }
+}
 
 function json(data, status = 200, extraHeaders = {}) {
   return new Response(JSON.stringify(data), {
@@ -61,6 +133,7 @@ async function api(request, env) {
   }
 
   if (url.pathname === "/api/tracks" && request.method === "GET") {
+    await backfillEmbeddedCovers(env);
     const { results } = await env.DB.prepare(
       "SELECT id, title, artist, album, genre, size_bytes, created_at, cover_content_type, download_count FROM tracks ORDER BY created_at DESC",
     ).all();
@@ -245,7 +318,8 @@ async function api(request, env) {
     }
     const id = crypto.randomUUID();
     const objectKey = `tracks/${id}`;
-    const coverKey = hasCover ? `covers/${id}` : "";
+    let coverKey = hasCover ? `covers/${id}` : "";
+    let coverType = hasCover ? coverFile.type : "";
     const originalName = safeFilename(file.name);
     try {
       await env.AUDIO.put(objectKey, file.stream(), {
@@ -267,11 +341,22 @@ async function api(request, env) {
         console.error("cover_upload_failed", { id, message: String(error) });
         return json({ error: "อัปโหลดรูปปกไม่สำเร็จ กรุณาลองอีกครั้ง" }, 502);
       }
+    } else if (file.type === "audio/mpeg" || file.type === "audio/mp3") {
+      try {
+        const cover = await extractTrackCover(env, objectKey);
+        if (cover) {
+          coverKey = `covers/${id}`;
+          coverType = cover.type;
+          await env.AUDIO.put(coverKey, cover.image, { httpMetadata: { contentType: coverType }, customMetadata: { trackId: id, purpose: "cover" } });
+        }
+      } catch (error) {
+        console.error("embedded_cover_extract_failed", { id, message: String(error) });
+      }
     }
     try {
       await env.DB.prepare(
-        "INSERT INTO tracks (id, title, artist, album, genre, object_key, original_name, content_type, size_bytes, cover_key, cover_content_type) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-      ).bind(id, title, artist, album, genre, objectKey, originalName, file.type || "application/octet-stream", file.size, coverKey, hasCover ? coverFile.type : "").run();
+        "INSERT INTO tracks (id, title, artist, album, genre, object_key, original_name, content_type, size_bytes, cover_key, cover_content_type, cover_checked) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)",
+      ).bind(id, title, artist, album, genre, objectKey, originalName, file.type || "application/octet-stream", file.size, coverKey, coverType).run();
     } catch (error) {
       await env.AUDIO.delete(objectKey);
       if (coverKey) await env.AUDIO.delete(coverKey);
