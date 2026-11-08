@@ -14,7 +14,7 @@ function json(data, status = 200, extraHeaders = {}) {
 }
 
 function safeFilename(name) {
-  return name.replace(/[\r\n"\\/]/g, "_").slice(0, 180) || "audio";
+  return name.replace(/[\r\n"\\/]/g, "_").replace(/[^\x20-\x7E]/g, "_").slice(0, 180) || "audio";
 }
 
 async function isAdmin(request, env) {
@@ -210,17 +210,17 @@ async function api(request, env) {
     if (!track) return json({ error: "ไม่พบเพลงนี้" }, 404);
     const object = await env.AUDIO.get(track.object_key);
     if (!object) return json({ error: "ไม่พบไฟล์เสียง" }, 404);
-    if (url.searchParams.get("download") === "1") {
-      await env.DB.prepare("UPDATE tracks SET download_count = download_count + 1 WHERE id = ?").bind(audioMatch[1]).run();
-    }
+    const isDownload = url.searchParams.get("download") === "1";
     const headers = new Headers({
       "content-type": track.content_type,
       "cache-control": "public, max-age=3600",
       "accept-ranges": "bytes",
       "x-content-type-options": "nosniff",
     });
-    if (url.searchParams.get("download") === "1") {
-      headers.set("content-disposition", `attachment; filename="${safeFilename(track.original_name)}"; filename*=UTF-8''${encodeURIComponent(track.original_name)}`);
+    if (isDownload) {
+      const encodedName = encodeURIComponent(track.original_name).replace(/[!'()*]/g, (char) => `%${char.charCodeAt(0).toString(16).toUpperCase()}`);
+      headers.set("content-disposition", `attachment; filename="${safeFilename(track.original_name)}"; filename*=UTF-8''${encodedName}`);
+      await env.DB.prepare("UPDATE tracks SET download_count = download_count + 1 WHERE id = ?").bind(audioMatch[1]).run();
     }
     return new Response(object.body, { headers });
   }
