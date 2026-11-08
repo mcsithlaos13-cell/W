@@ -63,6 +63,11 @@ async function api(request, env) {
     return json({ tracks: results });
   }
 
+  if (url.pathname === "/api/admin/verify" && request.method === "GET") {
+    if (!(await isAdmin(request, env))) return json({ error: "รหัสผู้ดูแลไม่ถูกต้อง" }, 401);
+    return json({ ok: true });
+  }
+
   const audioMatch = url.pathname.match(/^\/api\/audio\/([0-9a-f-]{36})$/i);
   if (audioMatch && request.method === "GET") {
     const track = await env.DB.prepare("SELECT object_key, original_name, content_type FROM tracks WHERE id = ?")
@@ -137,6 +142,24 @@ async function api(request, env) {
   }
 
   const trackMatch = url.pathname.match(/^\/api\/tracks\/([0-9a-f-]{36})$/i);
+  if (trackMatch && request.method === "PATCH") {
+    if (!(await isAdmin(request, env))) return json({ error: "รหัสผู้ดูแลไม่ถูกต้อง" }, 401);
+    let body;
+    try { body = await request.json(); } catch { return json({ error: "ข้อมูลเพลงไม่ถูกต้อง" }, 400); }
+    const title = String(body.title || "").trim();
+    const artist = String(body.artist || "").trim();
+    const album = String(body.album || "").trim();
+    const genre = String(body.genre || "");
+    if (!title || title.length > 120 || !artist || artist.length > 120 || album.length > 120 || !ALLOWED_GENRES.has(genre)) {
+      return json({ error: "กรุณาตรวจชื่อเพลง ศิลปิน อัลบั้ม และแนวเพลง" }, 400);
+    }
+    const result = await env.DB.prepare(
+      "UPDATE tracks SET title = ?, artist = ?, album = ?, genre = ? WHERE id = ?",
+    ).bind(title, artist, album, genre, trackMatch[1]).run();
+    if (result.meta.changes !== 1) return json({ error: "ไม่พบเพลงนี้" }, 404);
+    return json({ ok: true, id: trackMatch[1] });
+  }
+
   if (trackMatch && request.method === "DELETE") {
     if (!(await isAdmin(request, env))) return json({ error: "รหัสผู้ดูแลไม่ถูกต้อง" }, 401);
     const track = await env.DB.prepare("SELECT object_key FROM tracks WHERE id = ?").bind(trackMatch[1]).first();
