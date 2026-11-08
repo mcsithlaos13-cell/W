@@ -1,0 +1,3 @@
+ALTER TABLE tracks ADD COLUMN cover_key TEXT NOT NULL DEFAULT '';
+ALTER TABLE tracks ADD COLUMN cover_content_type TEXT NOT NULL DEFAULT '';
+
