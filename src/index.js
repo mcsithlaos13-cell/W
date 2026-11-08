@@ -52,6 +52,18 @@ function isFacebookProfile(value) {
   } catch { return false; }
 }
 
+function isSocialProfile(value, domains) {
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" && domains.some((domain) => url.hostname === domain || url.hostname.endsWith(`.${domain}`));
+  } catch { return false; }
+}
+
+function isWhatsAppContact(value) {
+  if (/^\+?[0-9][0-9\s()-]{6,24}$/.test(value)) return true;
+  return isSocialProfile(value, ["wa.me", "whatsapp.com"]);
+}
+
 async function api(request, env) {
   const url = new URL(request.url);
   if (url.pathname === "/api/health" && request.method === "GET") {
@@ -105,7 +117,7 @@ async function api(request, env) {
 
   if (url.pathname === "/api/creators" && request.method === "GET") {
     const { results } = await env.DB.prepare(
-      "SELECT id, display_name, services, facebook_url, created_at FROM creators ORDER BY created_at DESC LIMIT 500",
+      "SELECT id, display_name, services, facebook_url, instagram_url, whatsapp, tiktok_url, created_at FROM creators ORDER BY created_at DESC LIMIT 500",
     ).all();
     return json({ creators: results });
   }
@@ -117,14 +129,20 @@ async function api(request, env) {
     const displayName = String(body.display_name || "").trim();
     const services = String(body.services || "").trim();
     const facebookUrl = String(body.facebook_url || "").trim();
-    if (!displayName || displayName.length > 80 || !services || services.length > 300 || facebookUrl.length > 500) {
-      return json({ error: "กรุณาตรวจชื่อครีเอเตอร์ งานที่รับ และลิงก์ Facebook" }, 400);
+    const instagramUrl = String(body.instagram_url || "").trim();
+    const whatsapp = String(body.whatsapp || "").trim();
+    const tiktokUrl = String(body.tiktok_url || "").trim();
+    if (!displayName || displayName.length > 80 || !services || services.length > 300 || facebookUrl.length > 500 || instagramUrl.length > 500 || whatsapp.length > 500 || tiktokUrl.length > 500) {
+      return json({ error: "กรุณาตรวจชื่อครีเอเตอร์ งานที่รับ และข้อมูลช่องทางติดต่อ" }, 400);
     }
     if (facebookUrl && !isFacebookProfile(facebookUrl)) return json({ error: "ลิงก์ Facebook ต้องขึ้นต้นด้วย https:// และเป็นลิงก์ Facebook" }, 400);
+    if (instagramUrl && !isSocialProfile(instagramUrl, ["instagram.com"])) return json({ error: "กรุณาใส่ลิงก์ Instagram ที่ถูกต้อง" }, 400);
+    if (whatsapp && !isWhatsAppContact(whatsapp)) return json({ error: "WhatsApp ให้ใส่เบอร์โทรหรือ URL wa.me / whatsapp.com" }, 400);
+    if (tiktokUrl && !isSocialProfile(tiktokUrl, ["tiktok.com"])) return json({ error: "กรุณาใส่ลิงก์ TikTok ที่ถูกต้อง" }, 400);
     const id = crypto.randomUUID();
     await env.DB.prepare(
-      "INSERT INTO creators (id, display_name, services, facebook_url) VALUES (?, ?, ?, ?)",
-    ).bind(id, displayName, services, facebookUrl).run();
+      "INSERT INTO creators (id, display_name, services, facebook_url, instagram_url, whatsapp, tiktok_url) VALUES (?, ?, ?, ?, ?, ?, ?)",
+    ).bind(id, displayName, services, facebookUrl, instagramUrl, whatsapp, tiktokUrl).run();
     return json({ ok: true, id }, 201);
   }
 
