@@ -1,0 +1,2 @@
+INSERT OR IGNORE INTO genres (name) VALUES ('REMIX LAOS');
+
