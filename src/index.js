@@ -79,7 +79,7 @@ async function api(request, env) {
 
   if (url.pathname === "/api/tracks" && request.method === "GET") {
     const { results } = await env.DB.prepare(
-      "SELECT id, title, artist, album, genre, size_bytes, created_at, cover_content_type FROM tracks ORDER BY created_at DESC LIMIT 250",
+      "SELECT id, title, artist, album, genre, size_bytes, created_at, cover_content_type, download_count FROM tracks ORDER BY created_at DESC LIMIT 250",
     ).all();
     return json({ tracks: results });
   }
@@ -210,6 +210,9 @@ async function api(request, env) {
     if (!track) return json({ error: "ไม่พบเพลงนี้" }, 404);
     const object = await env.AUDIO.get(track.object_key);
     if (!object) return json({ error: "ไม่พบไฟล์เสียง" }, 404);
+    if (url.searchParams.get("download") === "1") {
+      await env.DB.prepare("UPDATE tracks SET download_count = download_count + 1 WHERE id = ?").bind(audioMatch[1]).run();
+    }
     const headers = new Headers({
       "content-type": track.content_type,
       "cache-control": "public, max-age=3600",
