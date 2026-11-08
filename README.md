@@ -9,11 +9,12 @@
 - R2: `khlun-music-audio` (binding `AUDIO`)
 - ไฟล์หน้าเว็บ: `public/`
 - ขนาดไฟล์เสียงที่อัปโหลดได้: 20 MB ต่อเพลง
+- จำกัดการอัปโหลดไว้ 5 เพลงต่อเครือข่ายต่อวัน, 20 เพลงต่อวันทั้งเว็บ และพื้นที่รวม 2 GB
 
 ### API
 
 - `GET /api/tracks` — แสดงรายการเพลง
-- `POST /api/tracks` — อัปโหลดไฟล์เสียงพร้อมรายละเอียด (ต้องส่ง `Authorization: Bearer <ADMIN_TOKEN>`)
+- `POST /api/tracks` — อัปโหลดไฟล์เสียงพร้อมรายละเอียดสำหรับผู้เข้าชมทั่วไป
 - `GET /api/audio/:id` — เล่นไฟล์เสียง
 - `GET /api/audio/:id?download=1` — ดาวน์โหลดไฟล์เสียง
 - `DELETE /api/tracks/:id` — ลบเพลง (ต้องใช้รหัสผู้ดูแล)
@@ -28,6 +29,8 @@ npx wrangler d1 migrations apply khlun-music --remote
 npx wrangler secret put ADMIN_TOKEN
 npx wrangler deploy
 ```
+
+การอัปโหลดสาธารณะไม่ต้องใช้ token ระบบยังเก็บ `ADMIN_TOKEN` ไว้สำหรับการลบเพลงผ่าน API ฝั่งผู้ดูแล และใช้สร้างค่าแฮช IP สำหรับจำกัดจำนวนอัปโหลด อย่าเปิดเผยค่านี้
 
 ในเครื่องให้สร้างไฟล์ `.dev.vars` ที่มี `ADMIN_TOKEN="รหัสผู้ดูแลของคุณ"` ก่อนใช้ `npx wrangler dev` ห้าม commit ไฟล์นี้
 
