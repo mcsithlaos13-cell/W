@@ -45,6 +45,13 @@ async function getUploadIpHash(request, env) {
   return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
+function isFacebookProfile(value) {
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" && /(^|\.)facebook\.com$|(^|\.)fb\.me$/.test(url.hostname);
+  } catch { return false; }
+}
+
 async function api(request, env) {
   const url = new URL(request.url);
   if (url.pathname === "/api/health" && request.method === "GET") {
@@ -61,6 +68,72 @@ async function api(request, env) {
       "SELECT id, title, artist, album, genre, size_bytes, created_at FROM tracks ORDER BY created_at DESC LIMIT 250",
     ).all();
     return json({ tracks: results });
+  }
+
+  if (url.pathname === "/api/members" && request.method === "GET") {
+    const { results } = await env.DB.prepare(
+      "SELECT id, display_name, artist_name, facebook_url, created_at FROM members ORDER BY created_at DESC LIMIT 500",
+    ).all();
+    return json({ members: results });
+  }
+
+  if (url.pathname === "/api/members" && request.method === "POST") {
+    if (!(await isAdmin(request, env))) return json({ error: "รหัสผู้ดูแลไม่ถูกต้อง" }, 401);
+    let body;
+    try { body = await request.json(); } catch { return json({ error: "ข้อมูลสมาชิกไม่ถูกต้อง" }, 400); }
+    const displayName = String(body.display_name || "").trim();
+    const artistName = String(body.artist_name || "").trim();
+    const facebookUrl = String(body.facebook_url || "").trim();
+    if (!displayName || displayName.length > 80 || artistName.length > 120 || facebookUrl.length > 500) {
+      return json({ error: "กรุณาตรวจชื่อสมาชิก ชื่อศิลปิน และลิงก์ Facebook" }, 400);
+    }
+    if (facebookUrl && !isFacebookProfile(facebookUrl)) return json({ error: "ลิงก์ Facebook ต้องขึ้นต้นด้วย https:// และเป็นลิงก์ Facebook" }, 400);
+    const id = crypto.randomUUID();
+    await env.DB.prepare(
+      "INSERT INTO members (id, display_name, artist_name, facebook_url) VALUES (?, ?, ?, ?)",
+    ).bind(id, displayName, artistName, facebookUrl).run();
+    return json({ ok: true, id }, 201);
+  }
+
+  const memberMatch = url.pathname.match(/^\/api\/members\/([0-9a-f-]{36})$/i);
+  if (memberMatch && request.method === "DELETE") {
+    if (!(await isAdmin(request, env))) return json({ error: "รหัสผู้ดูแลไม่ถูกต้อง" }, 401);
+    const result = await env.DB.prepare("DELETE FROM members WHERE id = ?").bind(memberMatch[1]).run();
+    if (result.meta.changes !== 1) return json({ error: "ไม่พบรายชื่อนี้" }, 404);
+    return new Response(null, { status: 204 });
+  }
+
+  if (url.pathname === "/api/creators" && request.method === "GET") {
+    const { results } = await env.DB.prepare(
+      "SELECT id, display_name, services, facebook_url, created_at FROM creators ORDER BY created_at DESC LIMIT 500",
+    ).all();
+    return json({ creators: results });
+  }
+
+  if (url.pathname === "/api/creators" && request.method === "POST") {
+    if (!(await isAdmin(request, env))) return json({ error: "รหัสผู้ดูแลไม่ถูกต้อง" }, 401);
+    let body;
+    try { body = await request.json(); } catch { return json({ error: "ข้อมูลครีเอเตอร์ไม่ถูกต้อง" }, 400); }
+    const displayName = String(body.display_name || "").trim();
+    const services = String(body.services || "").trim();
+    const facebookUrl = String(body.facebook_url || "").trim();
+    if (!displayName || displayName.length > 80 || !services || services.length > 300 || facebookUrl.length > 500) {
+      return json({ error: "กรุณาตรวจชื่อครีเอเตอร์ งานที่รับ และลิงก์ Facebook" }, 400);
+    }
+    if (facebookUrl && !isFacebookProfile(facebookUrl)) return json({ error: "ลิงก์ Facebook ต้องขึ้นต้นด้วย https:// และเป็นลิงก์ Facebook" }, 400);
+    const id = crypto.randomUUID();
+    await env.DB.prepare(
+      "INSERT INTO creators (id, display_name, services, facebook_url) VALUES (?, ?, ?, ?)",
+    ).bind(id, displayName, services, facebookUrl).run();
+    return json({ ok: true, id }, 201);
+  }
+
+  const creatorMatch = url.pathname.match(/^\/api\/creators\/([0-9a-f-]{36})$/i);
+  if (creatorMatch && request.method === "DELETE") {
+    if (!(await isAdmin(request, env))) return json({ error: "รหัสผู้ดูแลไม่ถูกต้อง" }, 401);
+    const result = await env.DB.prepare("DELETE FROM creators WHERE id = ?").bind(creatorMatch[1]).run();
+    if (result.meta.changes !== 1) return json({ error: "ไม่พบรายชื่อนี้" }, 404);
+    return new Response(null, { status: 204 });
   }
 
   if (url.pathname === "/api/admin/verify" && request.method === "GET") {
