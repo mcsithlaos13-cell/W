@@ -147,6 +147,29 @@ async function api(request, env) {
   }
 
   const creatorMatch = url.pathname.match(/^\/api\/creators\/([0-9a-f-]{36})$/i);
+  if (creatorMatch && request.method === "PATCH") {
+    if (!(await isAdmin(request, env))) return json({ error: "รหัสผู้ดูแลไม่ถูกต้อง" }, 401);
+    let body;
+    try { body = await request.json(); } catch { return json({ error: "ข้อมูลครีเอเตอร์ไม่ถูกต้อง" }, 400); }
+    const displayName = String(body.display_name || "").trim();
+    const services = String(body.services || "").trim();
+    const facebookUrl = String(body.facebook_url || "").trim();
+    const instagramUrl = String(body.instagram_url || "").trim();
+    const whatsapp = String(body.whatsapp || "").trim();
+    const tiktokUrl = String(body.tiktok_url || "").trim();
+    if (!displayName || displayName.length > 80 || !services || services.length > 300 || facebookUrl.length > 500 || instagramUrl.length > 500 || whatsapp.length > 500 || tiktokUrl.length > 500) {
+      return json({ error: "กรุณาตรวจชื่อครีเอเตอร์ งานที่รับ และข้อมูลช่องทางติดต่อ" }, 400);
+    }
+    if (facebookUrl && !isFacebookProfile(facebookUrl)) return json({ error: "ลิงก์ Facebook ต้องขึ้นต้นด้วย https:// และเป็นลิงก์ Facebook" }, 400);
+    if (instagramUrl && !isSocialProfile(instagramUrl, ["instagram.com"])) return json({ error: "กรุณาใส่ลิงก์ Instagram ที่ถูกต้อง" }, 400);
+    if (whatsapp && !isWhatsAppContact(whatsapp)) return json({ error: "WhatsApp ให้ใส่เบอร์โทรหรือ URL wa.me / whatsapp.com" }, 400);
+    if (tiktokUrl && !isSocialProfile(tiktokUrl, ["tiktok.com"])) return json({ error: "กรุณาใส่ลิงก์ TikTok ที่ถูกต้อง" }, 400);
+    const result = await env.DB.prepare(
+      "UPDATE creators SET display_name = ?, services = ?, facebook_url = ?, instagram_url = ?, whatsapp = ?, tiktok_url = ? WHERE id = ?",
+    ).bind(displayName, services, facebookUrl, instagramUrl, whatsapp, tiktokUrl, creatorMatch[1]).run();
+    if (result.meta.changes !== 1) return json({ error: "ไม่พบครีเอเตอร์รายนี้" }, 404);
+    return json({ ok: true, id: creatorMatch[1] });
+  }
   if (creatorMatch && request.method === "DELETE") {
     if (!(await isAdmin(request, env))) return json({ error: "รหัสผู้ดูแลไม่ถูกต้อง" }, 401);
     const result = await env.DB.prepare("DELETE FROM creators WHERE id = ?").bind(creatorMatch[1]).run();
