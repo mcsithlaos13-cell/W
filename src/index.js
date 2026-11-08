@@ -2,7 +2,7 @@ const MAX_UPLOAD_BYTES = 20 * 1024 * 1024;
 const MAX_DAILY_UPLOADS_PER_IP = 5;
 const MAX_DAILY_UPLOADS_GLOBAL = 20;
 const MAX_LIBRARY_BYTES = 2 * 1024 * 1024 * 1024;
-const ALLOWED_GENRES = new Set(["ฟังสบาย", "อินดี้ป๊อป", "อะคูสติก", "อื่น ๆ"]);
+const ALLOWED_GENRES = new Set(["ฟังสบาย", "อินดี้ป๊อป", "อะคูสติก", "รีมิกซ์", "เอฟเฟ็กต์เสียง", "เพลง Set", "อื่น ๆ"]);
 
 function json(data, status = 200, extraHeaders = {}) {
   return new Response(JSON.stringify(data), {
