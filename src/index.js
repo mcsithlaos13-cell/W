@@ -1,4 +1,7 @@
 const MAX_UPLOAD_BYTES = 20 * 1024 * 1024;
+const MAX_DAILY_UPLOADS_PER_IP = 5;
+const MAX_DAILY_UPLOADS_GLOBAL = 20;
+const MAX_LIBRARY_BYTES = 2 * 1024 * 1024 * 1024;
 const ALLOWED_GENRES = new Set(["ฟังสบาย", "อินดี้ป๊อป", "อะคูสติก", "อื่น ๆ"]);
 
 function json(data, status = 200, extraHeaders = {}) {
@@ -26,6 +29,20 @@ async function isAdmin(request, env) {
   let diff = 0;
   for (let i = 0; i < x.length; i++) diff |= x[i] ^ y[i];
   return diff === 0;
+}
+
+async function getUploadIpHash(request, env) {
+  const ip = request.headers.get("cf-connecting-ip");
+  if (!ip || !env.ADMIN_TOKEN) return null;
+  const key = await crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(env.ADMIN_TOKEN),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"],
+  );
+  const digest = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(ip));
+  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
 async function api(request, env) {
@@ -66,7 +83,8 @@ async function api(request, env) {
   }
 
   if (url.pathname === "/api/tracks" && request.method === "POST") {
-    if (!(await isAdmin(request, env))) return json({ error: "รหัสผู้ดูแลไม่ถูกต้อง" }, 401);
+    const ipHash = await getUploadIpHash(request, env);
+    if (!ipHash) return json({ error: "ไม่สามารถตรวจสอบการอัปโหลดนี้ได้" }, 403);
     let form;
     try { form = await request.formData(); } catch { return json({ error: "ข้อมูลอัปโหลดไม่ถูกต้อง" }, 400); }
     const title = String(form.get("title") || "").trim();
@@ -81,19 +99,37 @@ async function api(request, env) {
     if (!(file instanceof File) || file.size < 1 || file.size > MAX_UPLOAD_BYTES || !file.type.startsWith("audio/")) {
       return json({ error: "เลือกไฟล์เสียงขนาดไม่เกิน 20 MB" }, 400);
     }
+    await env.DB.prepare("DELETE FROM upload_attempts WHERE uploaded_at < datetime('now', '-2 days')").run();
+    const reservation = await env.DB.prepare(
+      "INSERT INTO upload_attempts (ip_hash) SELECT ? WHERE (SELECT COUNT(*) FROM upload_attempts WHERE ip_hash = ? AND uploaded_at >= datetime('now', '-1 day')) < ? AND (SELECT COUNT(*) FROM upload_attempts WHERE uploaded_at >= datetime('now', '-1 day')) < ? AND (SELECT COALESCE(SUM(size_bytes), 0) FROM tracks) + ? <= ?",
+    ).bind(ipHash, ipHash, MAX_DAILY_UPLOADS_PER_IP, MAX_DAILY_UPLOADS_GLOBAL, file.size, MAX_LIBRARY_BYTES).run();
+    if (reservation.meta.changes !== 1) {
+      const usage = await env.DB.prepare("SELECT COALESCE(SUM(size_bytes), 0) AS total_bytes FROM tracks").first();
+      if (usage?.total_bytes + file.size > MAX_LIBRARY_BYTES) {
+        return json({ error: "พื้นที่คลังเพลงเต็มชั่วคราว กรุณาติดต่อผู้ดูแล" }, 507);
+      }
+      return json({ error: "อัปโหลดถึงจำนวนที่กำหนดแล้ว กรุณาลองใหม่ภายหลัง" }, 429, { "retry-after": "86400" });
+    }
     const id = crypto.randomUUID();
     const objectKey = `tracks/${id}`;
     const originalName = safeFilename(file.name);
-    await env.AUDIO.put(objectKey, file.stream(), {
-      httpMetadata: { contentType: file.type || "application/octet-stream" },
-      customMetadata: { trackId: id },
-    });
+    try {
+      await env.AUDIO.put(objectKey, file.stream(), {
+        httpMetadata: { contentType: file.type || "application/octet-stream" },
+        customMetadata: { trackId: id },
+      });
+    } catch (error) {
+      await env.DB.prepare("DELETE FROM upload_attempts WHERE id = ?").bind(reservation.meta.last_row_id).run();
+      console.error("audio_upload_failed", { id, message: String(error) });
+      return json({ error: "อัปโหลดไฟล์เสียงไม่สำเร็จ กรุณาลองอีกครั้ง" }, 502);
+    }
     try {
       await env.DB.prepare(
         "INSERT INTO tracks (id, title, artist, album, genre, object_key, original_name, content_type, size_bytes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
       ).bind(id, title, artist, album, genre, objectKey, originalName, file.type || "application/octet-stream", file.size).run();
     } catch (error) {
       await env.AUDIO.delete(objectKey);
+      await env.DB.prepare("DELETE FROM upload_attempts WHERE id = ?").bind(reservation.meta.last_row_id).run();
       console.error("track_insert_failed", { id, message: String(error) });
       return json({ error: "บันทึกข้อมูลเพลงไม่สำเร็จ" }, 500);
     }
