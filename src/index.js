@@ -62,7 +62,7 @@ async function api(request, env) {
 
   if (url.pathname === "/api/tracks" && request.method === "GET") {
     const { results } = await env.DB.prepare(
-      "SELECT id, title, artist, album, genre, size_bytes, created_at, cover_content_type, download_count FROM tracks ORDER BY created_at DESC LIMIT 250",
+      "SELECT id, title, artist, album, genre, size_bytes, created_at, cover_content_type, download_count FROM tracks ORDER BY created_at DESC",
     ).all();
     return json({ tracks: results });
   }
