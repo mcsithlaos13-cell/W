@@ -7,7 +7,7 @@
 - Worker: `khlun-music`
 - D1: `khlun-music` (binding `DB`)
 - R2: `khlun-music-audio` (binding `AUDIO`)
-- ไฟล์หน้าเว็บ: `public/`
+- ไฟล์หน้าเว็บ: `public/` (หน้าเพลง `index.html` และหน้าอัปโหลด `upload.html`)
 - ขนาดไฟล์เสียงที่อัปโหลดได้: 20 MB ต่อเพลง
 - จำกัดการอัปโหลดไว้ 5 เพลงต่อเครือข่ายต่อวัน, 20 เพลงต่อวันทั้งเว็บ และพื้นที่รวม 2 GB
 
@@ -37,5 +37,6 @@ npx wrangler deploy
 ในเครื่องให้สร้างไฟล์ `.dev.vars` ที่มี `ADMIN_TOKEN="รหัสผู้ดูแลของคุณ"` ก่อนใช้ `npx wrangler dev` ห้าม commit ไฟล์นี้
 
 การเปลี่ยน schema ใหม่ให้เพิ่มไฟล์ SQL ลำดับถัดไปใน `migrations/` แล้วใช้คำสั่ง migrations ด้านบน
+
 
 
