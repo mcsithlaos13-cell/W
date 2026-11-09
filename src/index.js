@@ -99,6 +99,124 @@ function safeFilename(name) {
   return name.replace(/[\r\n"\\/]/g, "_").replace(/[^\x20-\x7E]/g, "_").slice(0, 180) || "audio";
 }
 
+function zip32(value) {
+  const bytes = new Uint8Array(4);
+  new DataView(bytes.buffer).setUint32(0, value >>> 0, true);
+  return bytes;
+}
+
+function zip16(value) {
+  const bytes = new Uint8Array(2);
+  new DataView(bytes.buffer).setUint16(0, value, true);
+  return bytes;
+}
+
+function concatBytes(...parts) {
+  const result = new Uint8Array(parts.reduce((size, part) => size + part.length, 0));
+  let offset = 0;
+  for (const part of parts) { result.set(part, offset); offset += part.length; }
+  return result;
+}
+
+const ZIP_CRC_TABLE = (() => {
+  const table = new Uint32Array(256);
+  for (let n = 0; n < 256; n++) {
+    let value = n;
+    for (let bit = 0; bit < 8; bit++) value = value & 1 ? 0xedb88320 ^ (value >>> 1) : value >>> 1;
+    table[n] = value >>> 0;
+  }
+  return table;
+})();
+
+function zipFilename(value) {
+  return String(value || "เพลง")
+    .replace(/[\\/:*?"<>|\x00-\x1f]/g, "_")
+    .replace(/^\.+|\.+$/g, "")
+    .slice(0, 180) || "เพลง";
+}
+
+function zipEntryName(track, folder, usedNames) {
+  const extension = String(track.original_name || "").match(/\.[a-z0-9]{1,10}$/i)?.[0] || ".mp3";
+  const base = zipFilename(track.title || "เพลง");
+  let name = `${folder}/${base}${extension}`;
+  let suffix = 2;
+  while (usedNames.has(name.toLowerCase())) name = `${folder}/${base} (${suffix++})${extension}`;
+  usedNames.add(name.toLowerCase());
+  return name;
+}
+
+function createSetZip(tracks, folder, env) {
+  const encoder = new TextEncoder();
+  const entries = [];
+  let offset = 0;
+  let currentIndex = 0;
+  let currentReader = null;
+  const usedNames = new Set();
+  const flags = 0x0808; // UTF-8 names and a trailing data descriptor.
+  const stream = new ReadableStream({
+    async pull(controller) {
+      try {
+        if (currentReader) {
+          const { value, done } = await currentReader.read();
+          if (!done) {
+            const chunk = value instanceof Uint8Array ? value : new Uint8Array(value);
+            const entry = entries[entries.length - 1];
+            for (const byte of chunk) entry.crc = ZIP_CRC_TABLE[(entry.crc ^ byte) & 0xff] ^ (entry.crc >>> 8);
+            entry.size += chunk.length;
+            offset += chunk.length;
+            controller.enqueue(chunk);
+            return;
+          }
+          currentReader = null;
+          const entry = entries[entries.length - 1];
+          entry.crc = (entry.crc ^ 0xffffffff) >>> 0;
+          await env.DB.prepare("UPDATE tracks SET download_count = download_count + 1 WHERE id = ?").bind(entry.id).run();
+          const descriptor = concatBytes(zip32(0x08074b50), zip32(entry.crc), zip32(entry.size), zip32(entry.size));
+          offset += descriptor.length;
+          controller.enqueue(descriptor);
+          return;
+        }
+
+        if (currentIndex < tracks.length) {
+          const track = tracks[currentIndex++];
+          const object = await env.AUDIO.get(track.object_key);
+          if (!object) throw new Error(`missing audio object: ${track.id}`);
+          const name = zipEntryName(track, folder, usedNames);
+          const nameBytes = encoder.encode(name);
+          const entry = { nameBytes, offset, size: 0, crc: 0xffffffff, id: track.id };
+          entries.push(entry);
+          const header = concatBytes(
+            zip32(0x04034b50), zip16(20), zip16(flags), zip16(0), zip16(0), zip16(33),
+            zip32(0), zip32(0), zip32(0), zip16(nameBytes.length), zip16(0), nameBytes,
+          );
+          offset += header.length;
+          controller.enqueue(header);
+          currentReader = object.body.getReader();
+          return;
+        }
+
+        const centralOffset = offset;
+        const centralRecords = entries.map((entry) => concatBytes(
+          zip32(0x02014b50), zip16(20), zip16(20), zip16(flags), zip16(0), zip16(0), zip16(33),
+          zip32(entry.crc), zip32(entry.size), zip32(entry.size), zip16(entry.nameBytes.length),
+          zip16(0), zip16(0), zip16(0), zip16(0), zip32(0), zip32(entry.offset), entry.nameBytes,
+        ));
+        const centralSize = centralRecords.reduce((size, record) => size + record.length, 0);
+        const endRecord = concatBytes(
+          zip32(0x06054b50), zip16(0), zip16(0), zip16(entries.length), zip16(entries.length),
+          zip32(centralSize), zip32(centralOffset), zip16(0),
+        );
+        controller.enqueue(concatBytes(...centralRecords, endRecord));
+        controller.close();
+      } catch (error) {
+        controller.error(error);
+      }
+    },
+    async cancel() { try { await currentReader?.cancel(); } catch {} },
+  });
+  return stream;
+}
+
 async function isAdmin(request, env) {
   const expected = env.ADMIN_TOKEN;
   const actual = request.headers.get("authorization") || "";
@@ -365,6 +483,26 @@ async function api(request, env) {
   if (url.pathname === "/api/admin/verify" && request.method === "GET") {
     if (!(await isAdmin(request, env))) return json({ error: "รหัสผู้ดูแลไม่ถูกต้อง" }, 401);
     return json({ ok: true });
+  }
+
+  if (url.pathname === "/api/sets/download.zip" && request.method === "GET") {
+    const setName = String(url.searchParams.get("name") || "").trim();
+    if (!setName || setName.length > 120) return json({ error: "ชื่อเพลง Set ไม่ถูกต้อง" }, 400);
+    const { results } = await env.DB.prepare(
+      "SELECT id, title, original_name, object_key, size_bytes FROM tracks WHERE genre = 'เพลง Set' AND album = ? ORDER BY created_at ASC, id ASC",
+    ).bind(setName).all();
+    if (!results.length) return json({ error: "ไม่พบเพลงในโฟลเดอร์นี้" }, 404);
+    if (results.length > 65535 || results.reduce((size, track) => size + Number(track.size_bytes || 0), 0) > 0xffffffff) {
+      return json({ error: "โฟลเดอร์นี้มีขนาดใหญ่เกินกว่าจะรวมเป็นไฟล์ ZIP เดียวได้" }, 413);
+    }
+    const safeSetName = zipFilename(setName);
+    const encodedName = encodeURIComponent(`${safeSetName}.zip`).replace(/[!'()*]/g, (char) => `%${char.charCodeAt(0).toString(16).toUpperCase()}`);
+    return new Response(createSetZip(results, safeSetName, env), { headers: {
+      "content-type": "application/zip",
+      "content-disposition": `attachment; filename="song-set.zip"; filename*=UTF-8''${encodedName}`,
+      "cache-control": "no-store",
+      "x-content-type-options": "nosniff",
+    } });
   }
 
   const audioMatch = url.pathname.match(/^\/api\/audio\/([0-9a-f-]{36})$/i);
