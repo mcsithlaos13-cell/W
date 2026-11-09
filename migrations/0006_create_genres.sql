@@ -9,4 +9,3 @@ INSERT OR IGNORE INTO genres (name) VALUES
 
 INSERT OR IGNORE INTO genres (name)
 SELECT DISTINCT genre FROM tracks WHERE trim(genre) <> '';
-

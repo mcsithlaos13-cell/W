@@ -12,4 +12,3 @@ CREATE TABLE IF NOT EXISTS tracks (
 );
 
 CREATE INDEX IF NOT EXISTS idx_tracks_created_at ON tracks(created_at DESC);
-

@@ -17,4 +17,3 @@ CREATE TABLE IF NOT EXISTS creators (
 );
 
 CREATE INDEX IF NOT EXISTS idx_creators_created_at ON creators(created_at DESC);
-
