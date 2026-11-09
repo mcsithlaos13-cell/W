@@ -70,6 +70,18 @@
   @media(max-width:620px){.table-head,.track{grid-template-columns:23px minmax(0,1fr) 100px}.wave-cell{display:none}}
   @media(max-width:390px){.table-head,.track{grid-template-columns:20px minmax(0,1fr) 94px}}
 </style>
+<style>
+  @media(max-width:620px){
+    .topbar .nav{justify-content:flex-start!important;overflow-x:auto;overflow-y:hidden;scrollbar-width:none;overscroll-behavior-x:contain}
+    .topbar .nav::-webkit-scrollbar{display:none}
+    .topbar .nav a{flex:0 0 auto}
+    .topbar .nav a:nth-child(1){order:1}
+    .topbar .nav a:nth-child(2){display:block!important;order:0}
+    .topbar .nav a:nth-child(3){order:2}
+    .topbar .nav a:nth-child(4),.topbar .nav a:nth-child(5){display:none!important}
+  }
+  @media(max-width:390px){.topbar .nav{display:flex!important}}
+</style>
 </head>
 <body>
   <div class="app">
