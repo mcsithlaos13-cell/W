@@ -3,6 +3,19 @@ const MAX_COVER_BYTES = 5 * 1024 * 1024;
 const ALLOWED_COVER_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
 const ALLOWED_GENRES = new Set(["ฟังสบาย", "อินดี้ป๊อป", "อะคูสติก", "รีมิกซ์", "เอฟเฟ็กต์เสียง", "เพลง Set", "อื่น ๆ"]);
 const ID3_SCAN_BYTES = 8 * 1024 * 1024;
+let visitorSchemaReady;
+
+async function ensureVisitorSchema(env) {
+  if (!visitorSchemaReady) {
+    visitorSchemaReady = env.DB.batch([
+      env.DB.prepare("CREATE TABLE IF NOT EXISTS site_visitor_counts (id INTEGER PRIMARY KEY CHECK (id = 1), total INTEGER NOT NULL DEFAULT 0)"),
+      env.DB.prepare("CREATE TABLE IF NOT EXISTS site_visitor_keys (visitor_hash TEXT PRIMARY KEY, first_seen INTEGER NOT NULL)"),
+      env.DB.prepare("CREATE TABLE IF NOT EXISTS site_visitors_online (visitor_hash TEXT PRIMARY KEY, last_seen INTEGER NOT NULL)"),
+      env.DB.prepare("INSERT OR IGNORE INTO site_visitor_counts (id, total) VALUES (1, 0)"),
+    ]).catch((error) => { visitorSchemaReady = undefined; throw error; });
+  }
+  await visitorSchemaReady;
+}
 
 function extractId3Cover(bytes) {
   if (bytes.length < 10 || String.fromCharCode(...bytes.subarray(0, 3)) !== "ID3") return null;
@@ -123,6 +136,30 @@ function isWhatsAppContact(value) {
 
 async function api(request, env) {
   const url = new URL(request.url);
+  if (url.pathname === "/api/visitors" && (request.method === "GET" || request.method === "POST")) {
+    await ensureVisitorSchema(env);
+    const now = Math.floor(Date.now() / 1000);
+    if (request.method === "POST") {
+      let body;
+      try { body = await request.json(); } catch { return json({ error: "ข้อมูลผู้เข้าชมไม่ถูกต้อง" }, 400); }
+      const visitorId = String(body.visitor_id || "");
+      if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(visitorId)) {
+        return json({ error: "รหัสผู้เข้าชมไม่ถูกต้อง" }, 400);
+      }
+      const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(visitorId)));
+      const visitorHash = Array.from(digest, (byte) => byte.toString(16).padStart(2, "0")).join("");
+      await env.DB.batch([
+        env.DB.prepare("INSERT OR IGNORE INTO site_visitor_keys (visitor_hash, first_seen) VALUES (?, ?)").bind(visitorHash, now),
+        env.DB.prepare("UPDATE site_visitor_counts SET total = total + changes() WHERE id = 1"),
+        env.DB.prepare("INSERT INTO site_visitors_online (visitor_hash, last_seen) VALUES (?, ?) ON CONFLICT(visitor_hash) DO UPDATE SET last_seen = excluded.last_seen").bind(visitorHash, now),
+        env.DB.prepare("DELETE FROM site_visitors_online WHERE last_seen < ?").bind(now - 75),
+      ]);
+    }
+    const stats = await env.DB.prepare(
+      "SELECT total, (SELECT COUNT(*) FROM site_visitors_online WHERE last_seen >= ?) AS online FROM site_visitor_counts WHERE id = 1",
+    ).bind(now - 75).first();
+    return json({ visitors: stats?.total || 0, online: stats?.online || 0 });
+  }
   if (url.pathname === "/api/health" && request.method === "GET") {
     try {
       await env.DB.prepare("SELECT 1").first();

@@ -12,7 +12,7 @@
   </style>
 <style>@media(max-width:720px){.topbar{position:sticky;top:0;z-index:30;background:rgba(8,11,9,.97);backdrop-filter:blur(12px)}}@media(max-width:700px){.topbar{position:sticky;top:0;z-index:30;background:rgba(8,11,9,.97);backdrop-filter:blur(12px)}}</style>
 <style>.nav .discord-link{color:#9eafff}.nav .discord-link:hover{color:#c7d1ff}</style>
-</head>
+<style>.mark{position:relative;overflow:hidden;isolation:isolate;background:linear-gradient(140deg,#e0ff9a,#bce96a 55%,#79c77c);animation:logo-float 4.8s ease-in-out infinite,logo-aura 3.6s ease-in-out infinite}.mark:after{content:"";position:absolute;inset:-35%;background:linear-gradient(110deg,transparent 42%,#ffffff75 50%,transparent 58%);transform:translateX(-130%) rotate(12deg);animation:logo-shine 5.8s ease-in-out infinite;pointer-events:none}@keyframes logo-float{0%,100%{transform:translateY(0) rotate(0)}50%{transform:translateY(-2px) rotate(-3deg)}}@keyframes logo-aura{50%{box-shadow:0 0 24px #c8f36a60}}@keyframes logo-shine{0%,58%,100%{transform:translateX(-130%) rotate(12deg)}76%{transform:translateX(130%) rotate(12deg)}}@media(prefers-reduced-motion:reduce){.mark,.mark:after{animation:none!important}}</style></head>
 <body>
   <header class="topbar">
     <a class="brand" href="/"><span class="mark">LR</span>LAOS REMIX</a>
@@ -42,6 +42,6 @@
     document.querySelector('#releaseType').onchange=e=>document.querySelector('#albumWrap').hidden=e.target.value!=='album';
     document.querySelector('#uploadForm').onsubmit=async e=>{e.preventDefault();const files=[...input.files];if(!files.length){status.textContent='กรุณาเลือกไฟล์เพลงก่อน';status.classList.add('error');return}const tooBig=files.find(f=>f.size>85*1024*1024);if(tooBig){status.textContent=`ไฟล์ ${tooBig.name} เกินขีดจำกัด 85 MB ของ Cloudflare`;status.classList.add('error');return}const btn=document.querySelector('#submit'),artist=document.querySelector('#artist').value.trim(),album=document.querySelector('#releaseType').value==='album'?document.querySelector('#album').value.trim():'',genre=document.querySelector('#genre').value;btn.disabled=true;status.classList.remove('error');let done=0;try{for(const [index,f] of files.entries()){const cover=coverByIndex.get(index);status.textContent=`กำลังอัปโหลด ${done+1}/${files.length} · ${f.name}`;const body=new FormData();body.set('title',files.length===1?(document.querySelector('#title').value.trim()||f.name.replace(/\.[^.]+$/,'')):f.name.replace(/\.[^.]+$/,''));body.set('artist',artist);body.set('album',album);body.set('genre',genre);body.set('audio',f);if(cover)body.set('cover',cover);const res=await fetch('/api/tracks',{method:'POST',body}),data=await res.json();if(!res.ok)throw new Error(data.error||'อัปโหลดไม่สำเร็จ');done++}status.textContent=`อัปโหลดสำเร็จ ${done} เพลง! กำลังกลับไปยังคลังเพลง…`;setTimeout(()=>location.href='/',1200)}catch(err){status.textContent=done?`อัปโหลดแล้ว ${done} เพลง · ${err.message}`:err.message;status.classList.add('error')}finally{btn.disabled=false}};
   </script>
-</body>
+<script src="/visitors.js" defer></script></body>
 </html>
 
