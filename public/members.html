@@ -10,13 +10,14 @@
 <style>@media(max-width:720px){.topbar{position:sticky;top:0;z-index:30;background:rgba(8,11,9,.97);backdrop-filter:blur(12px)}}@media(max-width:700px){.topbar{position:sticky;top:0;z-index:30;background:rgba(8,11,9,.97);backdrop-filter:blur(12px)}}</style>
 <style>.nav .discord-link{color:#9eafff}.nav .discord-link:hover{color:#c7d1ff}</style>
 <style>.member{flex-wrap:wrap}.socials{display:flex;flex-wrap:wrap;align-items:center;gap:8px;width:100%;padding-left:55px}.socials a{font-size:9px;color:var(--lime);text-decoration:none}.socials a:hover{text-decoration:underline}.member-actions{display:flex;gap:5px;margin-left:auto}.member-actions button{border:0;background:none;color:#9eaa9e;padding:4px;font-size:9px;cursor:pointer}.member-actions button:hover{color:var(--lime)}.member-actions .delete:hover{color:#ff9292}@media(max-width:480px){.socials{padding-left:0}.member-actions{margin-left:auto}}</style>
+<style>.avatar{position:relative;overflow:hidden}.avatar img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}.profile-preview{display:none;width:72px;height:72px;border-radius:16px;object-fit:cover;border:1px solid #2b372e;margin-top:8px}</style>
 </head>
 <body><div class="app">
   <header class="topbar"><a class="brand" href="/"><span class="mark">LR</span>LAOS REMIX</a><nav class="nav"><a href="/#library">เพลงทั้งหมด</a><a class="active" href="/members.html">สมาชิกกลุ่ม</a><a href="/creators.html">คนรับทำเพลง</a><a class="fb" href="https://www.facebook.com/groups/8435471913241708/?rdid=2WEk4TZNMCHK4pOx&amp;share_url=https%3A%2F%2Fwww.facebook.com%2Fshare%2Fg%2F1awvDx6CTP%2F#" target="_blank" rel="noopener noreferrer">กลุ่ม Facebook ↗</a><a class="discord-link" href="https://discord.gg/tjguRj7upm" target="_blank" rel="noopener noreferrer">กลุ่ม Discord ↗</a></nav><div class="top-actions"><button class="btn" id="manage">☷ จัดการรายชื่อ</button><a class="btn lime" href="/">♫ กลับไปฟังเพลง</a></div></header>
   <main class="page"><div class="eyebrow">OUR COMMUNITY</div><h1 class="page-title">สมาชิก<span>กลุ่ม</span></h1><p class="intro">ทำความรู้จักสมาชิกและศิลปินในชุมชน LAOS REMIX</p><div class="list-head"><h2>รายชื่อสมาชิก</h2><span class="count" id="count">กำลังโหลด…</span></div><div class="manage-bar admin-only"><button class="btn lime" id="addMember">＋ เพิ่มสมาชิก</button></div><section class="members" id="members" aria-live="polite"><div class="empty">กำลังโหลดรายชื่อ…</div></section><footer class="footer"><span><b>LR</b>　LAOS REMIX</span><span>รายชื่อสมาชิกจัดการโดยผู้ดูแล</span></footer></main>
 </div>
 <dialog id="adminDialog"><form id="adminForm"><h2>จัดการรายชื่อสมาชิก</h2><p>ใส่รหัสผู้ดูแลเพื่อเพิ่มหรือลบรายชื่อ</p><label for="token">รหัสผู้ดูแล</label><input id="token" type="password" autocomplete="current-password" required><div class="status" id="adminStatus"></div><div class="dialog-actions"><button class="btn" type="button" id="closeAdmin">ยกเลิก</button><button class="btn lime" type="submit" id="verify">เข้าสู่โหมดจัดการ</button></div></form></dialog>
-<dialog id="memberDialog"><form id="memberForm"><h2 id="memberDialogTitle">เพิ่มสมาชิก</h2><p>รายชื่อที่เพิ่มจะแสดงต่อสาธารณะบนหน้านี้</p><label for="memberName">ชื่อสมาชิก *</label><input id="memberName" maxlength="80" required><label for="artistName">ชื่อศิลปิน (ไม่บังคับ)</label><input id="artistName" maxlength="120"><label for="facebookUrl">ลิงก์ Facebook (ไม่บังคับ)</label><input id="facebookUrl" type="url" maxlength="500" placeholder="https://www.facebook.com/..."><label for="instagramUrl">Instagram (ใส่ @ชื่อผู้ใช้หรือลิงก์)</label><input id="instagramUrl" maxlength="500" placeholder="@username หรือ https://instagram.com/username"><label for="tiktokUrl">TikTok (ใส่ @ชื่อผู้ใช้หรือลิงก์)</label><input id="tiktokUrl" maxlength="500" placeholder="@username หรือ https://tiktok.com/@username"><label for="whatsapp">WhatsApp (เบอร์โทรหรือลิงก์)</label><input id="whatsapp" maxlength="500" placeholder="+856... หรือ https://wa.me/..."><div class="status" id="memberStatus"></div><div class="dialog-actions"><button class="btn" type="button" id="cancelMember">ยกเลิก</button><button class="btn lime" type="submit" id="saveMember">เพิ่มสมาชิก</button></div></form></dialog>
+<dialog id="memberDialog"><form id="memberForm"><h2 id="memberDialogTitle">เพิ่มสมาชิก</h2><p>รายชื่อที่เพิ่มจะแสดงต่อสาธารณะบนหน้านี้</p><label for="memberName">ชื่อสมาชิก *</label><input id="memberName" maxlength="80" required><label for="memberPhoto">รูปประจำตัว (JPG, PNG หรือ WebP ไม่เกิน 5 MB)</label><input id="memberPhoto" type="file" accept="image/jpeg,image/png,image/webp"><img id="memberPreview" class="profile-preview" alt="ตัวอย่างรูปสมาชิก"><label for="artistName">ชื่อศิลปิน (ไม่บังคับ)</label><input id="artistName" maxlength="120"><label for="facebookUrl">ลิงก์ Facebook (ไม่บังคับ)</label><input id="facebookUrl" type="url" maxlength="500" placeholder="https://www.facebook.com/..."><label for="instagramUrl">Instagram (ใส่ @ชื่อผู้ใช้หรือลิงก์)</label><input id="instagramUrl" maxlength="500" placeholder="@username หรือ https://instagram.com/username"><label for="tiktokUrl">TikTok (ใส่ @ชื่อผู้ใช้หรือลิงก์)</label><input id="tiktokUrl" maxlength="500" placeholder="@username หรือ https://tiktok.com/@username"><label for="whatsapp">WhatsApp (เบอร์โทรหรือลิงก์)</label><input id="whatsapp" maxlength="500" placeholder="+856... หรือ https://wa.me/..."><div class="status" id="memberStatus"></div><div class="dialog-actions"><button class="btn" type="button" id="cancelMember">ยกเลิก</button><button class="btn lime" type="submit" id="saveMember">เพิ่มสมาชิก</button></div></form></dialog>
 <script>
 let members = [], adminToken = null, editingMemberId = null;
 const list = document.querySelector('#members');
@@ -33,7 +34,7 @@ async function loadMembers() {
     if (!response.ok) throw Error('โหลดรายชื่อไม่สำเร็จ');
     members = (await response.json()).members || [];
     document.querySelector('#count').textContent = `${members.length} สมาชิก`;
-    list.innerHTML = members.length ? members.map(member => `<article class="member"><div class="avatar">${esc((member.display_name || 'LR').slice(0, 2))}</div><div class="info"><strong>${esc(member.display_name)}</strong><span>${esc(member.artist_name || 'สมาชิก LAOS REMIX')}</span></div>${socialLinks(member)}${adminToken ? `<div class="member-actions"><button data-edit="${esc(member.id)}">แก้ไข</button><button class="delete" data-delete="${esc(member.id)}">ลบ</button></div>` : ''}</article>`).join('') : '<div class="empty">ยังไม่มีรายชื่อสมาชิก</div>';
+    list.innerHTML = members.length ? members.map(member => `<article class="member"><div class="avatar">${esc((member.display_name || 'LR').slice(0, 2))}<img src="/api/profile-images/members/${encodeURIComponent(member.id)}" alt="" onerror="this.remove()"></div><div class="info"><strong>${esc(member.display_name)}</strong><span>${esc(member.artist_name || 'สมาชิก LAOS REMIX')}</span></div>${socialLinks(member)}${adminToken ? `<div class="member-actions"><button data-edit="${esc(member.id)}">แก้ไข</button><button class="delete" data-delete="${esc(member.id)}">ลบ</button></div>` : ''}</article>`).join('') : '<div class="empty">ยังไม่มีรายชื่อสมาชิก</div>';
   } catch (error) { list.innerHTML = `<div class="empty">${esc(error.message)}</div>`; }
 }
 function openMemberDialog(member = null) {
@@ -42,6 +43,11 @@ function openMemberDialog(member = null) {
   const status = document.querySelector('#memberStatus');
   status.textContent = '';
   status.classList.remove('error');
+  const preview = document.querySelector('#memberPreview');
+  preview.style.display = member?.id ? 'block' : 'none';
+  preview.src = member?.id ? `/api/profile-images/members/${encodeURIComponent(member.id)}` : '';
+  preview.onerror = () => { preview.style.display = 'none'; };
+  document.querySelector('#memberPhoto').value = '';
   document.querySelector('#memberDialogTitle').textContent = member ? 'แก้ไขข้อมูลสมาชิก' : 'เพิ่มสมาชิก';
   document.querySelector('#saveMember').textContent = member ? 'บันทึกการแก้ไข' : 'เพิ่มสมาชิก';
   if (member) {
@@ -74,6 +80,12 @@ document.querySelector('#adminForm').onsubmit = async event => {
   finally { button.disabled = false; }
 };
 document.querySelector('#addMember').onclick = () => openMemberDialog();
+document.querySelector('#memberPhoto').onchange = event => {
+  const file = event.target.files[0], preview = document.querySelector('#memberPreview');
+  if (!file) return;
+  if (file.size > 5 * 1024 * 1024) { event.target.value = ''; alert('รูปต้องมีขนาดไม่เกิน 5 MB'); return; }
+  preview.src = URL.createObjectURL(file); preview.style.display = 'block';
+};
 document.querySelector('#cancelMember').onclick = () => memberDialog.close();
 document.querySelector('#memberForm').onsubmit = async event => {
   event.preventDefault();
@@ -93,6 +105,16 @@ document.querySelector('#memberForm').onsubmit = async event => {
     const response = await fetch(url, {method:editingMemberId ? 'PATCH' : 'POST', headers:{Authorization:`Bearer ${adminToken}`,'Content-Type':'application/json'}, body:JSON.stringify(payload)});
     const data = await response.json();
     if (!response.ok) throw Error(data.error || 'บันทึกข้อมูลไม่สำเร็จ');
+    const savedId = data.id || editingMemberId;
+    editingMemberId = savedId;
+    document.querySelector('#memberDialogTitle').textContent = 'แก้ไขข้อมูลสมาชิก';
+    button.textContent = 'บันทึกการแก้ไข';
+    const photo = document.querySelector('#memberPhoto').files[0];
+    if (photo) {
+      const imageResponse = await fetch(`/api/profile-images/members/${encodeURIComponent(savedId)}`, {method:'PUT',headers:{Authorization:`Bearer ${adminToken}`,'Content-Type':photo.type},body:photo});
+      const imageData = await imageResponse.json();
+      if (!imageResponse.ok) throw Error(imageData.error || 'บันทึกข้อมูลแล้ว แต่บันทึกรูปไม่สำเร็จ');
+    }
     memberDialog.close(); await loadMembers();
   } catch (error) { status.textContent = error.message; status.classList.add('error'); }
   finally { button.disabled = false; }

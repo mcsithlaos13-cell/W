@@ -166,6 +166,41 @@ async function api(request, env) {
     return json({ members: results });
   }
 
+  const profileImageMatch = url.pathname.match(/^\/api\/profile-images\/(members|creators)\/([0-9a-f-]{36})$/i);
+  if (profileImageMatch && request.method === "GET") {
+    const [, collection, id] = profileImageMatch;
+    const table = collection === "members" ? "members" : "creators";
+    const exists = await env.DB.prepare(`SELECT id FROM ${table} WHERE id = ?`).bind(id).first();
+    if (!exists) return json({ error: "ไม่พบรายชื่อนี้" }, 404);
+    const object = await env.AUDIO.get(`profiles/${collection}/${id}`);
+    if (!object) return json({ error: "ยังไม่มีรูปประจำตัว" }, 404);
+    return new Response(object.body, { headers: {
+      "content-type": object.httpMetadata?.contentType || "application/octet-stream",
+      "cache-control": "public, max-age=3600",
+      "x-content-type-options": "nosniff",
+    } });
+  }
+  if (profileImageMatch && request.method === "PUT") {
+    if (!(await isAdmin(request, env))) return json({ error: "รหัสผู้ดูแลไม่ถูกต้อง" }, 401);
+    const contentType = (request.headers.get("content-type") || "").split(";")[0].trim().toLowerCase();
+    const declaredLength = Number(request.headers.get("content-length") || 0);
+    if (!new Set(["image/jpeg", "image/png", "image/webp"]).has(contentType)) {
+      return json({ error: "รูปต้องเป็น JPG, PNG หรือ WebP" }, 400);
+    }
+    if (declaredLength > MAX_COVER_BYTES) return json({ error: "รูปต้องมีขนาดไม่เกิน 5 MB" }, 413);
+    const [, collection, id] = profileImageMatch;
+    const table = collection === "members" ? "members" : "creators";
+    const exists = await env.DB.prepare(`SELECT id FROM ${table} WHERE id = ?`).bind(id).first();
+    if (!exists) return json({ error: "ไม่พบรายชื่อนี้" }, 404);
+    const image = await request.arrayBuffer();
+    if (!image.byteLength || image.byteLength > MAX_COVER_BYTES) return json({ error: "รูปต้องมีขนาดไม่เกิน 5 MB" }, 413);
+    await env.AUDIO.put(`profiles/${collection}/${id}`, image, {
+      httpMetadata: { contentType },
+      customMetadata: { profileType: collection, profileId: id },
+    });
+    return json({ ok: true, image_url: `/api/profile-images/${collection}/${id}` });
+  }
+
   if (url.pathname === "/api/members" && request.method === "POST") {
     if (!(await isAdmin(request, env))) return json({ error: "รหัสผู้ดูแลไม่ถูกต้อง" }, 401);
     let body;
@@ -223,6 +258,7 @@ async function api(request, env) {
     if (!(await isAdmin(request, env))) return json({ error: "รหัสผู้ดูแลไม่ถูกต้อง" }, 401);
     const result = await env.DB.prepare("DELETE FROM members WHERE id = ?").bind(memberMatch[1]).run();
     if (result.meta.changes !== 1) return json({ error: "ไม่พบรายชื่อนี้" }, 404);
+    await env.AUDIO.delete(`profiles/members/${memberMatch[1]}`);
     return new Response(null, { status: 204 });
   }
 
@@ -285,6 +321,7 @@ async function api(request, env) {
     if (!(await isAdmin(request, env))) return json({ error: "รหัสผู้ดูแลไม่ถูกต้อง" }, 401);
     const result = await env.DB.prepare("DELETE FROM creators WHERE id = ?").bind(creatorMatch[1]).run();
     if (result.meta.changes !== 1) return json({ error: "ไม่พบรายชื่อนี้" }, 404);
+    await env.AUDIO.delete(`profiles/creators/${creatorMatch[1]}`);
     return new Response(null, { status: 204 });
   }
 
