@@ -161,7 +161,7 @@ async function api(request, env) {
 
   if (url.pathname === "/api/members" && request.method === "GET") {
     const { results } = await env.DB.prepare(
-      "SELECT id, display_name, artist_name, facebook_url, created_at FROM members ORDER BY created_at DESC LIMIT 500",
+      "SELECT id, display_name, artist_name, facebook_url, instagram_url, whatsapp, tiktok_url, created_at FROM members ORDER BY created_at DESC LIMIT 500",
     ).all();
     return json({ members: results });
   }
@@ -173,18 +173,52 @@ async function api(request, env) {
     const displayName = String(body.display_name || "").trim();
     const artistName = String(body.artist_name || "").trim();
     const facebookUrl = String(body.facebook_url || "").trim();
-    if (!displayName || displayName.length > 80 || artistName.length > 120 || facebookUrl.length > 500) {
-      return json({ error: "กรุณาตรวจชื่อสมาชิก ชื่อศิลปิน และลิงก์ Facebook" }, 400);
+    const instagramInput = String(body.instagram_url || "").trim();
+    const tiktokInput = String(body.tiktok_url || "").trim();
+    const whatsapp = String(body.whatsapp || "").trim();
+    const instagramUrl = instagramInput && !/^[a-z][a-z0-9+.-]*:\/\//i.test(instagramInput) ? `https://instagram.com/${instagramInput.replace(/^@/, "")}` : instagramInput;
+    const tiktokUrl = tiktokInput && !/^[a-z][a-z0-9+.-]*:\/\//i.test(tiktokInput) ? `https://tiktok.com/@${tiktokInput.replace(/^@/, "")}` : tiktokInput;
+    if (!displayName || displayName.length > 80 || artistName.length > 120 || facebookUrl.length > 500 || instagramUrl.length > 500 || whatsapp.length > 500 || tiktokUrl.length > 500) {
+      return json({ error: "กรุณาตรวจชื่อสมาชิก ชื่อศิลปิน และลิงก์โซเชียล" }, 400);
     }
     if (facebookUrl && !isFacebookProfile(facebookUrl)) return json({ error: "ลิงก์ Facebook ต้องขึ้นต้นด้วย https:// และเป็นลิงก์ Facebook" }, 400);
+    if (instagramUrl && !isSocialProfile(instagramUrl, ["instagram.com"])) return json({ error: "กรุณาใส่ชื่อผู้ใช้หรือลิงก์ Instagram ที่ถูกต้อง" }, 400);
+    if (whatsapp && !isWhatsAppContact(whatsapp)) return json({ error: "WhatsApp ให้ใส่เบอร์โทรหรือ URL wa.me / whatsapp.com" }, 400);
+    if (tiktokUrl && !isSocialProfile(tiktokUrl, ["tiktok.com"])) return json({ error: "กรุณาใส่ชื่อผู้ใช้หรือลิงก์ TikTok ที่ถูกต้อง" }, 400);
     const id = crypto.randomUUID();
     await env.DB.prepare(
-      "INSERT INTO members (id, display_name, artist_name, facebook_url) VALUES (?, ?, ?, ?)",
-    ).bind(id, displayName, artistName, facebookUrl).run();
+      "INSERT INTO members (id, display_name, artist_name, facebook_url, instagram_url, whatsapp, tiktok_url) VALUES (?, ?, ?, ?, ?, ?, ?)",
+    ).bind(id, displayName, artistName, facebookUrl, instagramUrl, whatsapp, tiktokUrl).run();
     return json({ ok: true, id }, 201);
   }
 
   const memberMatch = url.pathname.match(/^\/api\/members\/([0-9a-f-]{36})$/i);
+  if (memberMatch && request.method === "PATCH") {
+    if (!(await isAdmin(request, env))) return json({ error: "รหัสผู้ดูแลไม่ถูกต้อง" }, 401);
+    let body;
+    try { body = await request.json(); } catch { return json({ error: "ข้อมูลสมาชิกไม่ถูกต้อง" }, 400); }
+    const displayName = String(body.display_name || "").trim();
+    const artistName = String(body.artist_name || "").trim();
+    const facebookUrl = String(body.facebook_url || "").trim();
+    const instagramInput = String(body.instagram_url || "").trim();
+    const tiktokInput = String(body.tiktok_url || "").trim();
+    const whatsapp = String(body.whatsapp || "").trim();
+    const instagramUrl = instagramInput && !/^[a-z][a-z0-9+.-]*:\/\//i.test(instagramInput) ? `https://instagram.com/${instagramInput.replace(/^@/, "")}` : instagramInput;
+    const tiktokUrl = tiktokInput && !/^[a-z][a-z0-9+.-]*:\/\//i.test(tiktokInput) ? `https://tiktok.com/@${tiktokInput.replace(/^@/, "")}` : tiktokInput;
+    if (!displayName || displayName.length > 80 || artistName.length > 120 || facebookUrl.length > 500 || instagramUrl.length > 500 || whatsapp.length > 500 || tiktokUrl.length > 500) {
+      return json({ error: "กรุณาตรวจชื่อสมาชิก ชื่อศิลปิน และลิงก์โซเชียล" }, 400);
+    }
+    if (facebookUrl && !isFacebookProfile(facebookUrl)) return json({ error: "ลิงก์ Facebook ต้องขึ้นต้นด้วย https:// และเป็นลิงก์ Facebook" }, 400);
+    if (instagramUrl && !isSocialProfile(instagramUrl, ["instagram.com"])) return json({ error: "กรุณาใส่ชื่อผู้ใช้หรือลิงก์ Instagram ที่ถูกต้อง" }, 400);
+    if (whatsapp && !isWhatsAppContact(whatsapp)) return json({ error: "WhatsApp ให้ใส่เบอร์โทรหรือ URL wa.me / whatsapp.com" }, 400);
+    if (tiktokUrl && !isSocialProfile(tiktokUrl, ["tiktok.com"])) return json({ error: "กรุณาใส่ชื่อผู้ใช้หรือลิงก์ TikTok ที่ถูกต้อง" }, 400);
+    const result = await env.DB.prepare(
+      "UPDATE members SET display_name = ?, artist_name = ?, facebook_url = ?, instagram_url = ?, whatsapp = ?, tiktok_url = ? WHERE id = ?",
+    ).bind(displayName, artistName, facebookUrl, instagramUrl, whatsapp, tiktokUrl, memberMatch[1]).run();
+    if (result.meta.changes !== 1) return json({ error: "ไม่พบรายชื่อนี้" }, 404);
+    return json({ ok: true, id: memberMatch[1] });
+  }
+
   if (memberMatch && request.method === "DELETE") {
     if (!(await isAdmin(request, env))) return json({ error: "รหัสผู้ดูแลไม่ถูกต้อง" }, 401);
     const result = await env.DB.prepare("DELETE FROM members WHERE id = ?").bind(memberMatch[1]).run();
